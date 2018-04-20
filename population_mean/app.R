@@ -1,18 +1,14 @@
 library(shiny)
 library(ggplot2)
+library(plotly)
 
 gg_color_hue = function(n) {
     hues = seq(15, 375, length = n + 1)
     hcl(h = hues, l = 65, c = 100)[1:n]
 }
 
-get_binwidth = function(data){
-    potential_values = exp(seq(log(0.3), log(0.00001), length.out=100))
-    max_counts = sapply(potential_values, function(binwidth){
-        hist_counts = hist(data, breaks=seq(min(data), max(data) + binwidth, by=binwidth), plot=FALSE)$counts
-        return(max(hist_counts))
-    })
-    return(max(potential_values[potential_values * max_counts < 12 * 0.3]))
+get_n_bins = function(data){
+    return(1 + 3.322*log(nrow(data)))
 }
 
 ui = shinyUI(fluidPage(
@@ -36,8 +32,8 @@ ui = shinyUI(fluidPage(
         ),
     
         mainPanel(
-            plotOutput("population_distribution", height=300),
-            plotOutput("mean_distribution", height=300)
+            plotlyOutput("population_distribution", height=450),
+            plotlyOutput("mean_distribution", height=450)
         )
    )
 ))
@@ -78,6 +74,7 @@ server = shinyServer(function(input, output) {
         input$resimulate
         input$resimulate10
         input$resimulate100
+        input$resimulate1000
         isolate({
             obs = rnorm(input$n_samples, mean=input$mean, sd=input$sd)
             mean_points$x = c(mean_points$x, mean(obs))
@@ -85,43 +82,33 @@ server = shinyServer(function(input, output) {
         return(obs)
     })
     
-    output$population_distribution = renderPlot({
+    output$population_distribution = renderPlotly({
         d = data.frame(x=c(mean(data()), data()))
         d$name = c('Mean', rep('Data', nrow(d) - 1))
-        binwidth = get_binwidth(d$x)
         isolate({
-            x_vals = seq(input$mean - 4 * input$sd, input$mean + 4 * input$sd, length.out=1000)
-            pdf = data.frame(x=x_vals, pdf=dnorm(x_vals, input$mean, input$sd))
-            ggplot(d) +
-                geom_dotplot(aes(x=x, fill=name, color=name), method='histodot', binwidth=binwidth*input$sd) +
-                # geom_line(data=pdf, aes(x=x_vals, y=pdf, color='Truth', fill='Truth')) +
-                scale_y_continuous(NULL, breaks=NULL) +
+            p = ggplot(d) +
+                geom_histogram(aes(x=x, fill=name, color=name), bins=get_n_bins(d)) +
                 coord_cartesian(xlim=input$mean + 4*input$sd*c(-1, 1)) +
                 scale_color_manual('', values=c('Data'=cols[1], 'Mean'=cols[2])) +
                 scale_fill_manual('', values=c('Data'=cols[1], 'Mean'=cols[2]))
         })
+        return(ggplotly(p))
     })
 
-    output$mean_distribution = renderPlot({
+    output$mean_distribution = renderPlotly({
         d = data.frame(x=mean_points$x)
-        x_vals = isolate(seq(input$mean - 4 * input$sd, input$mean + 4 * input$sd, length.out=1000))
-        pdf = data.frame(x=x_vals, pdf=dnorm(x_vals, isolate(input$mean), isolate(input$sd/sqrt(input$n_samples))))
-        #plt = ggplot(pdf) +
-        #    geom_line(aes(x=x_vals, y=pdf, color='Truth', fill='Truth'))
         plt = ggplot(d)
         if(nrow(d) > 0){
             isolate({
-                binwidth = get_binwidth(mean_points$x) * input$sd
-                plt = plt + geom_dotplot(data=d, aes(x=x, fill='Mean', color='Mean'), binwidth=binwidth,
-                                         method='histodot') +
+                plt = plt +
+                    geom_histogram(data=d, aes(x=x, fill='Mean', color='Mean'), bins=get_n_bins(d)) +
                     scale_color_manual(values=c('Truth'=cols[3], 'Mean'=cols[2])) +
-                    scale_y_continuous(NULL, breaks=NULL) +
                     scale_fill_manual('', values=c('Truth'=cols[3], 'Mean'=cols[2])) +
                     coord_cartesian(xlim=input$mean + 4*input$sd*c(-1, 1)) +
                     guides(color=FALSE)
             })
         }
-        plt
+        return(ggplotly(plt))
     })
 })
 
