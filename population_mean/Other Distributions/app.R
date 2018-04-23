@@ -72,7 +72,8 @@ ui = dashboardPage(
                         sliderInput(inputId='cauchy_scale', label='Scale', min=0.01, max=10, value=1, step=0.01)
                     )
                 ),
-                sliderInput(inputId='n_samples', label='# Samples', min=1, max=1000, value=10, step=1),
+                uiOutput(outputId='n_samples_slider'),
+                # sliderInput(inputId='n_samples', label='# Samples', min=1, max=1000, value=10, step=1),
                 fluidRow(
                     actionButton(inputId='resimulate', label='Simulate'),
                     actionButton(inputId='resimulate10', label='x10'),
@@ -94,6 +95,21 @@ ui = dashboardPage(
 
 server = shinyServer(function(input, output) {
     n_simulations <<- 1
+    values = c(sapply(c(1, 2, 5), function(x) x * 10^(0:4)))
+    values = sort(values)
+    
+    output$n_samples_slider = renderUI({
+        args = list(inputId='n_index', label='# Samples', value=30, min=1, max=length(values))
+        args$ticks = T
+        html = do.call('sliderInput', args)
+        html$children[[2]]$attribs[['data-values']] = paste0(values, collapse=',')
+        str(html)
+        return(html)
+    })
+    
+    n = reactive({
+        values[input$n_index + 1]
+    })
     
     cols = gg_color_hue(3)
     
@@ -105,36 +121,36 @@ server = shinyServer(function(input, output) {
         input$resimulate100
         input$resimulate1000
         if(input$distribution == 'Normal')
-            result = rnorm(n_simulations * input$n_samples, input$normal_mean, input$normal_sd)
+            result = rnorm(n_simulations * n(), input$normal_mean, input$normal_sd)
         else if(input$distribution == 'Bernoulli')
-            result = rbinom(n_simulations * input$n_samples, size=1, prob=input$bernoulli_p)
+            result = rbinom(n_simulations * n(), size=1, prob=input$bernoulli_p)
         else if(input$distribution == 'Binomial')
-            result = rbinom(n_simulations * input$n_samples, size=input$binomial_n, prob=input$binomial_p)
+            result = rbinom(n_simulations * n(), size=input$binomial_n, prob=input$binomial_p)
         else if(input$distribution == 'Uniform')
-            result = runif(n_simulations * input$n_samples, min=input$uniform_range[1], max=input$uniform_range[2])
+            result = runif(n_simulations * n(), min=input$uniform_range[1], max=input$uniform_range[2])
         else if(input$distribution == 'Poisson')
-            result = rpois(n_simulations * input$n_samples, lambda=input$poisson_lambda)
+            result = rpois(n_simulations * n(), lambda=input$poisson_lambda)
         else if(input$distribution == 'Geometric')
-            result = rgeom(n_simulations * input$n_samples, prob=input$geometric_p)
+            result = rgeom(n_simulations * n(), prob=input$geometric_p)
         else if(input$distribution == 'Log-Normal')
-            result = rlnorm(n_simulations * input$n_samples, meanlog=input$log_normal_mean, sdlog=input$log_normal_sd)
+            result = rlnorm(n_simulations * n(), meanlog=input$log_normal_mean, sdlog=input$log_normal_sd)
         else if(input$distribution == "Student's t")
-            result = rt(n_simulations * input$n_samples, df=input$t_df, ncp=input$t_mean)
+            result = rt(n_simulations * n(), df=input$t_df, ncp=input$t_mean)
         else if(input$distribution == 'Skew Normal')
-            result = rsn(n_simulations * input$n_samples, xi=input$skew_normal_mean, omega=input$skew_normal_sd, alpha=input$skew_normal_skew)
+            result = rsn(n_simulations * n(), xi=input$skew_normal_mean, omega=input$skew_normal_sd, alpha=input$skew_normal_skew)
         else if(input$distribution == 'Cauchy')
-            result = rcauchy(n_simulations * input$n_samples, location=input$cauchy_location, scale=input$cauchy_scale)
+            result = rcauchy(n_simulations * n(), location=input$cauchy_location, scale=input$cauchy_scale)
         else
             stop('Distribution not implemented!')
-        new_means = tapply(result, rep(1:n_simulations, each=input$n_samples), mean)
+        new_means = tapply(result, rep(1:n_simulations, each=n()), mean)
         isolate({mean_points$x = c(mean_points$x, new_means)})
-        return(result[1:input$n_samples])
+        return(result[1:n()])
     })
     
     observeEvent({
             input$clear
             # Clear mean distribution if parameters are changed
-            input$n_samples
+            input$n_index
             input$normal_mean; input$normal_sd
             input$bernoulli_p
             input$binomial_p; input$binomial_n
@@ -181,13 +197,18 @@ server = shinyServer(function(input, output) {
             return(c(-0.05, max(3*input$poisson_lambda, 1)))
         else if(input$distribution == 'Geometric')
             return(c(-0.05, 15 * sqrt((1 - input$geometric_p) / input$geometric_p^2)))
-        else if(input$distribution == 'Log-Normal')
-            return(NULL)
-        else if(input$distribution == "Student's t")
-            return(NULL)
-        else if(input$distribution == 'Skew Normal')
-            return(NULL)
-        else if(input$distribution == 'Cauchy')
+        else if(input$distribution == 'Log-Normal'){
+            mean = exp(input$log_normal_mean + input$log_normal_sd^2 / 2)
+            variance = (exp(input$log_normal_sd^2)-1) * exp(2 * input$log_normal_mean + input$log_normal_sd^2)
+            return(mean + 4 * sqrt(variance) * c(-1, 1))
+        } else if(input$distribution == "Student's t")
+            return(c(input$t_mean + 4 * input$t_df / (input$t_df - 2) * c(-1, 1)))
+        else if(input$distribution == 'Skew Normal'){
+            delta = input$skew_normal_skew / sqrt(1 + input$skew_normal_skew^2)
+            mean = input$skew_normal_mean + input$skew_normal_sd * delta * sqrt(2 / pi)
+            variance = input$skew_normal_sd^2 * (1 - 2 * delta^2 / pi)
+            return(c(mean + 4 * sqrt(variance) * c(-1, 1)))
+        } else if(input$distribution == 'Cauchy')
             return(NULL)
         else
             stop('Distribution range not implemented!')
