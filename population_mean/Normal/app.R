@@ -17,7 +17,7 @@ ui = shinyUI(fluidPage(
    
     sidebarLayout(
         sidebarPanel(
-            sliderInput(inputId='n_samples', label='# Samples', min=1, max=100, value=10, step=1),
+            sliderInput(inputId='n_samples', label='# Samples', min=1, max=1000, value=10, step=1),
             sliderInput(inputId='mean', label='Mean', min=-20, max=20, value=0, step=1),
             sliderInput(inputId='sd', label='Standard Deviation', min=0.1, max=10, value=1, step=0.1),
             fluidRow(
